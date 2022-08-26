@@ -103,7 +103,7 @@ def main(urls):
         missions = GetMissionPageData(missions,url)
         missions = GetGalleryLinks(missions)
         missions = GetImageLinks(missions)
-        #missions = DownloadImages(missions)
+    #missions = DownloadImages(missions)
     
     SaveToCSV(missions)
     print('***********DONE**********')
