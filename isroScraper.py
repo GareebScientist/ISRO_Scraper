@@ -1,9 +1,16 @@
+import time
 from bs4 import BeautifulSoup
 import requests
 import shutil
 import random
 import csv
 import asyncio
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 class Mission:
     pass
@@ -21,27 +28,54 @@ def SaveToCSV(missions):
             mission.galleryLink, mission.imageFileName,mission.OriginalImageLinks,mission.TwitterImageLinks])
 
 def GetMissionPageData(missions,url):
-    page = requests.get(url)
-    soup = BeautifulSoup(page.text, "html.parser")
-    rows = soup.find_all('table')[0].find("tbody").find_all("tr")
 
-    for row in rows:
-        mission = Mission()
-        cells = row.find_all("td")
-        mission.id = RemoveNewLineAndTrim(cells[0].get_text())
-        mission.title = RemoveNewLineAndTrim(cells[1].get_text())
-        mission.date = RemoveNewLineAndTrim(cells[2].get_text())
-        mission.vehicle = RemoveNewLineAndTrim(cells[3].get_text())
-        mission.payload = RemoveNewLineAndTrim(cells[4].get_text())
-        mission.remarks = RemoveNewLineAndTrim(cells[5].get_text())
+    options = Options()
+    options.headless = True
+    driver = webdriver.Chrome()
+    driver.get(url)
 
-        mission.pageLink ='https://www.isro.gov.in/'+ cells[1].find_all('a', href=True)[0]['href']
-        mission.galleryLink=''
-        mission.imageFileName=''
-        mission.OriginalImageLinks=[]
-        mission.TwitterImageLinks=[]
-        missions.append(mission)
-        print('Scraped Data for : '+mission.title+', Id: '+mission.id)
+    
+    html = driver.page_source
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Calculate the total number of pages
+    pagination_element = soup.find("ul", {"class": "pagination test"})
+    page_count = len(pagination_element.find_all("li"))
+
+    for current_page in range(1, page_count + 1):
+        rows = soup.find_all('table')[0].find("tbody").find_all("tr")
+
+        for row in rows:
+            mission = Mission()
+            cells = row.find_all("td")
+            mission.id = RemoveNewLineAndTrim(cells[0].get_text())
+            mission.title = RemoveNewLineAndTrim(cells[1].get_text())
+            mission.date = RemoveNewLineAndTrim(cells[2].get_text())
+            mission.vehicle = RemoveNewLineAndTrim(cells[3].get_text())
+            mission.payload = RemoveNewLineAndTrim(cells[4].get_text())
+            mission.remarks = RemoveNewLineAndTrim(cells[5].get_text())
+
+            mission.pageLink ='https://www.isro.gov.in/'+ cells[1].find_all('a', href=True)[0]['href']
+            mission.galleryLink=''
+            mission.imageFileName=''
+            mission.OriginalImageLinks=[]
+            mission.TwitterImageLinks=[]
+            missions.append(mission)
+            print('Scraped Data for : '+mission.title+', Id: '+mission.id)
+
+        # Find the next page link
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        next_page_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, f"//ul[@class='pagination test']/li/a[@data-i='{current_page + 1}']")))
+        #next_page_link = driver.find_element("xpath",f"//ul[@class='pagination test']/li/a[@data-i='{current_page + 1}']")
+
+        #next_page_link.click()
+        driver.execute_script("arguments[0].click();", next_page_link)
+
+        # Update the HTML source for the next iteration
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+
+    driver.quit()
 
     print('Main Page Scraped, proceeding to Scrape GalleryLinks')
     return missions
@@ -113,6 +147,6 @@ async def main(urls):
 
     print('***********DONE**********')
 
-urls=['https://www.isro.gov.in/PSLV_Launchers.html','https://www.isro.gov.in/GSLV_Launchers.html','https://www.isro.gov.in/LVM3_Launchers.html','https://www.isro.gov.in/SSLV_Launchers.html']
+urls=['https://www.isro.gov.in/PSLV_Launchers.html']
 #'https://www.isro.gov.in/PSLV_Launchers.html','https://www.isro.gov.in/GSLV_Launchers.html','https://www.isro.gov.in/LVM3_Launchers.html','https://www.isro.gov.in/SSLV_Launchers.html'
 asyncio.run(main(urls))
