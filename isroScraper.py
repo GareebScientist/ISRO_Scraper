@@ -3,6 +3,7 @@ import requests
 import shutil
 import random
 import csv
+import asyncio
 
 class Mission:
     pass
@@ -21,8 +22,8 @@ def SaveToCSV(missions):
 
 def GetMissionPageData(missions,url):
     page = requests.get(url)
-    soup = BeautifulSoup(page.text, 'html.parser')
-    rows = soup.find_all('table')[-1].find("tbody").find_all("tr")
+    soup = BeautifulSoup(page.text, "html.parser")
+    rows = soup.find_all('table')[0].find("tbody").find_all("tr")
 
     for row in rows:
         mission = Mission()
@@ -31,16 +32,10 @@ def GetMissionPageData(missions,url):
         mission.title = RemoveNewLineAndTrim(cells[1].get_text())
         mission.date = RemoveNewLineAndTrim(cells[2].get_text())
         mission.vehicle = RemoveNewLineAndTrim(cells[3].get_text())
-        if 'gslv-mk-iii' in url:
-            mission.orbit = ''
-            mission.payload = RemoveNewLineAndTrim(cells[4].get_text())
-            mission.remarks = RemoveNewLineAndTrim(cells[5].get_text())
-        else:
-            mission.orbit = RemoveNewLineAndTrim(cells[4].get_text())
-            mission.payload = RemoveNewLineAndTrim(cells[5].get_text())
-            mission.remarks = RemoveNewLineAndTrim(cells[6].get_text())
+        mission.payload = RemoveNewLineAndTrim(cells[4].get_text())
+        mission.remarks = RemoveNewLineAndTrim(cells[5].get_text())
 
-        mission.pageLink ='https://www.isro.gov.in'+ cells[1].find_all('a', href=True)[0]['href']
+        mission.pageLink ='https://www.isro.gov.in/'+ cells[1].find_all('a', href=True)[0]['href']
         mission.galleryLink=''
         mission.imageFileName=''
         mission.OriginalImageLinks=[]
@@ -56,7 +51,9 @@ def GetGalleryLinks(missions):
         page = requests.get(mission.pageLink)
         soup = BeautifulSoup(page.text, 'html.parser')
         if len(soup.select("a[href*=gallery]"))>0:
-            mission.galleryLink = 'https://www.isro.gov.in'+ soup.select("a[href*=gallery]")[0]['href']
+            mission.galleryLink = 'https://www.isro.gov.in/'+ soup.select("a[href*=gallery]")[0]['href']
+        elif len(soup.select("a[href*=Gallery]"))>0:
+            mission.galleryLink = 'https://www.isro.gov.in/'+ soup.select("a[href*=Gallery]")[0]['href']
         
     print('GalleryLinks Scraped, visiting each page to gather image links')
     return missions
@@ -72,41 +69,50 @@ def GetImageLinks(missions):
             for links in soup.find_all("a"):
                 link = links["href"]
                 if 'jpg' in link:
-                    tempImageList.append(link)
+                    tempImageList.append('https://www.isro.gov.in'+link)
 
             print('ImageLinks Gathered for Mission : '+mission.title+', Id: '+mission.id)
             mission.OriginalImageLinks = tempImageList
 
     return missions
 
-def DownloadImages(missions):
+async def download_image(url, file_name):
+    res = requests.get(url, stream=True)
+
+    if res.status_code == 200:
+        with open(file_name, 'wb') as f:
+            shutil.copyfileobj(res.raw, f)
+        print(f'Image successfully Downloaded: {file_name}')
+    else:
+        print(f'Image could not be retrieved: {url}')
+
+async def DownloadImages(missions):
+    tasks = []
     for mission in missions:
         for url in mission.OriginalImageLinks:
-            file_name = 'D:\DownloadedImages\\' + mission.vehicle + (str)(random.randint(1000,9999)) + '.jpg'
+            file_name = 'images\\' + mission.title.replace('\\','').replace('/','').replace(' ','') + (str)(random.randint(1000,9999)) + '.jpg'
             mission.imageFileName = file_name
 
-            res = requests.get(url, stream = True)
+            task = asyncio.create_task(download_image(url, file_name))
+            tasks.append(task)
 
-            if res.status_code == 200:
-                with open(file_name,'wb') as f:
-                    shutil.copyfileobj(res.raw, f)
-                print('Image sucessfully Downloaded: ',file_name)
-            else:
-                print('Image Couldn\'t be retrieved')
+    await asyncio.gather(*tasks)
 
     return missions
 
-def main(urls):
+async def main(urls):
     missions=[]
     for url in urls:
         print('Scraping - '+url)
         missions = GetMissionPageData(missions,url)
         missions = GetGalleryLinks(missions)
         missions = GetImageLinks(missions)
-    #missions = DownloadImages(missions)
-    
-    SaveToCSV(missions)
+
+    missions = await DownloadImages(missions)
+    #SaveToCSV(missions)
+
     print('***********DONE**********')
 
-urls=['https://www.isro.gov.in/launchers/pslv','https://www.isro.gov.in/launchers/gslv','https://www.isro.gov.in/launchers/gslv-mk-iii']
-main(urls)
+urls=['https://www.isro.gov.in/PSLV_Launchers.html','https://www.isro.gov.in/GSLV_Launchers.html','https://www.isro.gov.in/LVM3_Launchers.html','https://www.isro.gov.in/SSLV_Launchers.html']
+#'https://www.isro.gov.in/PSLV_Launchers.html','https://www.isro.gov.in/GSLV_Launchers.html','https://www.isro.gov.in/LVM3_Launchers.html','https://www.isro.gov.in/SSLV_Launchers.html'
+asyncio.run(main(urls))
